@@ -2972,7 +2972,7 @@ function renderEvidências() {
     else status = ['pendente', 'ANÁLISE PENDENTE'];
 
     var laudo = pronta
-      ? '<span class="cf-pericia">LAUDO: ' + escapeHtml(p.nome) + ' — ' + escapeHtml(p.funcao) + ' · pH ≈ ' + p.ph + ' (' + p.zona + ')</span>'
+      ? '<span class="cf-pericia">LAUDO: evidência analisada — conclusões registradas no dossiê.</span>'
       : '';
 
     card.innerHTML =
@@ -3032,16 +3032,23 @@ function renderCarta(i) {
   else if (p.risco === 'medio') riscoLinha = '<span class="badge-risco medio">RISCO MÉDIO</span>';
   else riscoLinha = '<span class="badge-risco baixo">RISCO BAIXO</span>';
 
+  var analiseConcluida = S.f1.funcOk[i] && S.f1.phOk[i];
+  var periciaHtml = analiseConcluida
+    ? '<div class="pericia-box">' + escapeHtml(p.pericia) + '</div>'
+    : '<div class="pericia-box">Testes físico-químicos da bancada em andamento — a coloração do extrato de repolho roxo e a leitura do papel indicador serão apresentadas quando a análise for validada pela equipe.</div>';
+
   var rotuloRevelado = S.f1.rotulo[i];
   var rotuloHtml;
   if (rotuloRevelado) {
     rotuloHtml =
       '<div class="detalhe-linha"><span class="k">Fórmula</span><span class="v formula">' + subscritos(p.formula) + '</span></div>' +
       '<div class="detalhe-linha"><span class="k">Composição</span><span class="v">' + escapeHtml(p.compPct) + '</span></div>' +
-      '<div class="detalhe-linha"><span class="k">Comportamento</span><span class="v">' + escapeHtml(p.comportamento) + '</span></div>' +
+      (S.f1.funcOk[i]
+        ? '<div class="detalhe-linha"><span class="k">Comportamento</span><span class="v">' + escapeHtml(p.comportamento) + '</span></div>'
+        : '<div class="detalhe-linha"><span class="k">Comportamento</span><span class="v">A ser descrito pela equipe ao concluir a classificação da função inorgânica.</span></div>') +
       '<div class="detalhe-linha"><span class="k">Avaliação</span><span class="v">' + riscoLinha + '</span></div>' +
       (S.f1.funcOk[i] && S.f1.phOk[i]
-        ? '<div class="detalhe-linha"><span class="k">Laudo</span><span class="v">Função inorgânica: <strong>' + escapeHtml(p.funcao) + '</strong> · pH ≈ ' + p.ph + ' (' + p.zona + ')</span></div>'
+        ? '<div class="detalhe-linha"><span class="k">Laudo</span><span class="v">Análise validada pela equipe e registrada no dossiê.</span></div>'
         : '') +
       '<div class="barra-acoes"><button class="btn sec" id="btn-revelar-rotulo" type="button" disabled>DADOS DO RÓTULO RECUPERADOS</button></div>';
   } else {
@@ -3058,7 +3065,7 @@ function renderCarta(i) {
       '</div>' +
       '<div class="detalhe">' +
         '<div class="detalhe-linha"><span class="k">Cena</span><span class="v">' + escapeHtml(p.cena) + '</span></div>' +
-        '<div class="detalhe-linha"><span class="k">Perícia</span><span class="v"><div class="pericia-box">' + escapeHtml(p.pericia) + '</div></span></div>' +
+        '<div class="detalhe-linha"><span class="k">Perícia</span><span class="v">' + periciaHtml + '</span></div>' +
         '<div class="detalhe-linha"><span class="k">Estado físico</span><span class="v">' + escapeHtml(p.aspecto) + '</span></div>' +
         '<div class="detalhe-linha"><span class="k">Odor</span><span class="v">' + escapeHtml(p.odor) + '</span></div>' +
         rotuloHtml +
@@ -3131,12 +3138,13 @@ function confirmarFunção() {
 
   if (S.f1.funcOk[i]) { mostrarFb(el, 'info', 'JÁ CLASSIFICADO', 'A função desta evidência já foi validada.'); return; }
   if (!S.f1.exam[i]) { mostrarFb(el, 'info', 'EXAMINE A EVIDÊNCIA', 'Abra a ficha pericial para ler a cena e os resultados dos testes.'); return; }
-  if (!S.f1.rotulo[i]) { mostrarFb(el, 'info', 'DADOS DO RÓTULO', 'Revele a fórmula, a composição e o comportamento recuperados pela perícia antes de classificar a função.'); return; }
+  if (!S.f1.rotulo[i]) { mostrarFb(el, 'info', 'DADOS DO RÓTULO', 'Revele a fórmula e a composição recuperadas pela perícia antes de classificar a função.'); return; }
   if (!S.f1.funcaoEsc) { mostrarFb(el, 'info', 'SEM RESPOSTA', 'Escolha uma das funções inorgânicas antes de confirmar.'); return; }
 
   if (S.f1.funcaoEsc === p.funcao) {
     S.f1.funcOk[i] = true;
     if (!S.f1.funcScored[i]) { S.f1.funcScored[i] = true; somarPontos(PONTUACAO.funcao); }
+    renderCarta(S.f1.atual);
     mostrarFb(el, 'ok', 'FUNÇÃO VALIDADA',
       '<p>' + escapeHtml(p.nome) + ' é <strong>' + p.funcao + '</strong>. ' + descFunção(p.funcao) + ' +' + PONTUACAO.funcao + ' pts.</p>',
       'Brown et al., 2016; Santos & Mól, 2013.');
@@ -3229,6 +3237,7 @@ function confirmarPH() {
   if (correto) {
     S.f1.phOk[i] = true;
     if (!S.f1.phScored[i]) { S.f1.phScored[i] = true; somarPontos(PONTUACAO.ph); }
+    renderCarta(S.f1.atual);
 
     var desbloqueio =
       (i + 1 >= PRODUTOS.length || !evidenciaAberta(i + 1))
@@ -3246,7 +3255,7 @@ function confirmarPH() {
     renderEscala();
     atualizarP1Readout();
     mostrarFb(el, 'erro', 'LEITURA DIVERGENTE',
-      '<p>pH <strong>' + valorTentado + '</strong> não confere. Compare a pista da bancada com a fórmula e o comportamento descritos na carta.</p>');
+      '<p>pH <strong>' + valorTentado + '</strong> não confere. Compare a pista da bancada, a fórmula e a composição descritos na carta.</p>');
     resetaAnimacao($('phase-1'));
   }
   renderEvidências();
