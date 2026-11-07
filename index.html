@@ -1886,6 +1886,19 @@
       #end .ficha .linha .v { color: #000; }
       #end .ficha .refs { color: #333; }
     }
+
+    /* ===== Liberações programadas e continuidade ===== */
+    .aviso-lib {
+      max-width: 1100px; margin: 0 auto 16px; padding: 14px 18px;
+      border: 1px solid #c99a2e; border-left: 5px solid #e0a100;
+      background: rgba(224, 161, 0, 0.10); border-radius: 4px;
+      font-family: var(--mono); font-size: 0.78rem; line-height: 1.55;
+      letter-spacing: 0.4px; color: #f3e2b3;
+    }
+    .aviso-lib strong { color: #ffd670; }
+    .aviso-lib .contagem { display: block; margin-top: 6px; color: #fff; font-size: 0.95rem; letter-spacing: 1px; }
+    .lock-data { margin-top: 8px; font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.5px; color: #f3e2b3; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
   </style>
 </head>
 <body>
@@ -1943,6 +1956,8 @@
 
     <!-- ================= MESA DE INVESTIGAÇÃO ================= -->
     <section id="intro">
+
+      <div id="aviso-liberacao" class="aviso-lib" hidden></div>
 
       <div class="mesa-capa">
         <span class="mesa-titulo">Mesa de Investigação · Polícia Científica</span>
@@ -2049,6 +2064,7 @@
             <span class="cp-selo">CENÁRIO 1 · NOVO PERITO</span>
             <p class="cp-msg">Seis evidências aguardam na mesa. Inicie a <strong>análise das amostras</strong> e descubra o que liberou o gás tóxico.</p>
             <button class="btn cta" id="btn-start" type="button"><span class="cta-seta" aria-hidden="true">▲</span> ANALISAR EVIDÊNCIAS</button>
+            <button class="btn sec" id="btn-recomecar" type="button" hidden style="margin-top:8px;">RECOMEÇAR DO ZERO</button>
           </div>
         </div>
 
@@ -2206,6 +2222,7 @@
         <span class="cadeado" aria-hidden="true"></span>
         <h3>FASE 02 · REATIVIDADE — BLOQUEADA</h3>
         <p>Este módulo (reatividade entre saneantes e balanceamento) só será liberado após a <strong>validação conceitual</strong> da Fase 01 — funções inorgânicas e escala de pH.</p>
+        <p class="lock-data" id="lock-2-data"></p>
       </div>
 
       <div id="content-2" hidden>
@@ -2326,6 +2343,7 @@
           <div class="barra-acoes">
             <button class="btn ok" id="advance-2" type="button" hidden>VALIDAR ENCONTRO 2 E LIBERAR ENCONTRO 3 →</button>
           </div>
+          <div class="fb" id="advance-2-fb" hidden></div>
         </div>
       </div>
     </section>
@@ -2337,6 +2355,7 @@
         <span class="cadeado" aria-hidden="true"></span>
         <h3>FASE 03 · BIOSSEGURANÇA — BLOQUEADA</h3>
         <p>Este módulo (EPIs, descarte consciente e conduta de emergência) só será liberado após a <strong>validação conceitual</strong> da Fase 02.</p>
+        <p class="lock-data" id="lock-3-data"></p>
       </div>
 
       <div id="content-3" hidden>
@@ -2408,6 +2427,7 @@
           <div class="barra-acoes">
             <button class="btn ok" id="btn-finish" type="button" hidden>EMITIR FICHA DE BIOSSEGURANÇA →</button>
           </div>
+          <div class="fb" id="btn-finish-fb" hidden></div>
         </div>
       </div>
     </section>
@@ -2707,6 +2727,7 @@ function somarPontos(v) {
   S.score += v;
   $('score').textContent = String(S.score);
   atualizarPainel();
+  salvarProgresso();
 }
 
 function atualizarPainel() {
@@ -2753,6 +2774,8 @@ function atualizarPassos(estado) {
 }
 
 function mostrarFase(id) {
+  if ((id === 'phase-1' || id === 'phase-2') && !f1f2Liberada()) id = 'intro';
+  if ((id === 'phase-3' || id === 'end') && !f3f4Liberada() && !modoLivreAtivo()) id = 'intro';
   ['intro', 'phase-1', 'phase-2', 'phase-3', 'end'].forEach(function (nome) {
     $(nome).hidden = nome !== id;
   });
@@ -2853,12 +2876,16 @@ function começarJogo() {
   atualizarPainel();
 
   // Mantém o modo apresentação ativo após reiniciar (se o toggle estiver marcado).
-  if ($('modo-livre') && $('modo-livre').checked) {
+  if (modoLivreAtivo()) {
     liberarEncontro(2);
     liberarEncontro(3);
     ['advance-1', 'p2a-next', 'p2b-next', 'p2c-next', 'p2-recons-next', 'advance-2', 'p3-advance-epi', 'p3-advance-desc', 'btn-finish']
       .forEach(function (id) { $(id).hidden = false; });
   }
+
+  jogoIniciado = true;
+  salvarProgresso();
+  atualizarLiberacao();
 }
 
 /* Renderiza o conteúdo de todas as fases a partir do estado atual (idempotente),
@@ -2900,7 +2927,7 @@ function garantirEstadoBase() {
 
 function modoLivreAtivo() {
   var m = $('modo-livre');
-  return m ? m.checked : false;
+  return m ? (m.checked && docenteLiberado()) : false;
 }
 
 function evidenciaPronta(j) {
@@ -3443,6 +3470,7 @@ function confirmarRecons() {
     mostrarFb(fbEl, 'erro', 'RECONSTRUÇÃO INCONSISTENTE', '<ul>' + msgs.join('') + '</ul>');
     resetaAnimacao($('f2montar'));
   }
+  salvarProgresso();
 }
 
 /* ------------------------- Quizzes (para render generalizado) ------------------------- */
@@ -3521,6 +3549,14 @@ function montarQuizzes() {
       btn.addEventListener('click', function () { responderQuiz(key, idx); });
       host.appendChild(btn);
     });
+
+    // Restaura visualmente quizzes já respondidos (retomada do progresso).
+    var respondido = { log1: S.f1.logOk, log2: S.f1.logOk2, r1: S.f2.r1, r2: S.f2.r2, ouro: S.f3.ouro }[key];
+    if (respondido) {
+      host.querySelectorAll('.quiz-opt').forEach(function (b, i) {
+        b.classList.add(i === defs[key].correta ? 'certa' : 'bloqueada');
+      });
+    }
   });
 }
 
@@ -3652,6 +3688,7 @@ function testarCombo(i, escolha) {
     }
     $('p2a-next').hidden = false;
   }
+  salvarProgresso();
 }
 
 /* ------------------------- Balanceamento (genérico) ------------------------- */
@@ -3786,7 +3823,7 @@ function validarEq(key) {
   if (key === 'neutra') {
     $('p2c-next').hidden = false;
   } else {
-    $('advance-2').hidden = false;
+    $('advance-2').hidden = !(f3f4Liberada() || modoLivreAtivo());
     atualizarPassos({ concluida: 2, atual: 2 });
   }
 }
@@ -4241,9 +4278,268 @@ function atualizarTrilha() {
     if (feito[k]) b.classList.add('feito');
     else if (k === primeiroPendente) b.classList.add('ativo');
     else b.classList.add('bloqueado');
-    var habilitado = modoLivreAtivo() || feito.slice(0, k).every(Boolean);
+    var habilitado = modoLivreAtivo() || (feito.slice(0, k).every(Boolean) && podeIniciarFase(k));
     b.disabled = !habilitado;
   }
+}
+
+/* ===================================================================
+   LIBERAÇÕES PROGRAMADAS (horário de Brasília, UTC−3)
+   e SALVAMENTO DO PROGRESSO (localStorage do navegador)
+   =================================================================== */
+
+var LIBERACOES = {
+  f1f2: new Date('2026-11-12T08:00:00-03:00').getTime(),
+  f3f4: new Date('2026-11-19T08:00:00-03:00').getTime()
+};
+
+function f1f2Liberada() { return Date.now() >= LIBERACOES.f1f2; }
+function f3f4Liberada() { return Date.now() >= LIBERACOES.f3f4; }
+
+/* Modo docente: liberado após 19/11; antes disso, só com ?prof=1 na URL. */
+function docenteLiberado() {
+  if (f3f4Liberada()) return true;
+  return /[?&#]prof=1\b/.test(location.search + location.hash);
+}
+
+function podeIniciarFase(k) {
+  return k <= 1 ? f1f2Liberada() : f3f4Liberada();
+}
+
+function tempoAte(ms) {
+  var d = Math.max(0, ms - Date.now());
+  return {
+    d: Math.floor(d / 86400000),
+    h: Math.floor((d % 86400000) / 3600000),
+    m: Math.floor((d % 3600000) / 60000),
+    s: Math.floor((d % 60000) / 1000)
+  };
+}
+
+function fmtContagem(c) {
+  function p(n) { return (n < 10 ? '0' : '') + n; }
+  return c.d + 'd ' + p(c.h) + 'h ' + p(c.m) + 'min ' + p(c.s) + 's';
+}
+
+var SALVAR_KEY = 'csi104_progresso_v2';
+var jogoIniciado = false;
+
+function atualizarBotaoInicio() {
+  var btn = $('btn-start');
+  if (!btn) return;
+  var tem = !!lerProgressoSalvo();
+  var liberado = f1f2Liberada();
+  if (!liberado) {
+    btn.textContent = 'DISPONÍVEL EM 12/11/2026 ÀS 08:00';
+    btn.disabled = true;
+  } else if (tem) {
+    btn.textContent = 'CONTINUAR INVESTIGAÇÃO';
+    btn.disabled = false;
+  } else {
+    btn.textContent = 'ANALISAR EVIDÊNCIAS';
+    btn.disabled = false;
+  }
+  var rec = $('btn-recomecar');
+  if (rec) rec.hidden = !(liberado && tem);
+}
+
+function atualizarLiberacao() {
+  var banner = $('aviso-liberacao');
+  var texto = '';
+  if (!f1f2Liberada()) {
+    texto = '<strong>LIBERAÇÃO PROGRAMADA</strong> — As Fases 01 e 02 serão liberadas em <strong>12/11/2026 às 08:00</strong> (horário de Brasília).' +
+      '<span class="contagem">Faltam ' + fmtContagem(tempoAte(LIBERACOES.f1f2)) + '</span>';
+  } else if (!f3f4Liberada()) {
+    texto = '<strong>FASES 03 E 04 BLOQUEADAS</strong> — Serão liberadas em <strong>19/11/2026 às 08:00</strong> (horário de Brasília).' +
+      '<span class="contagem">Faltam ' + fmtContagem(tempoAte(LIBERACOES.f3f4)) + '</span>';
+  }
+  if (banner) { banner.innerHTML = texto; banner.hidden = !texto; }
+
+  var l2 = $('lock-2-data');
+  if (l2) l2.textContent = f1f2Liberada() ? '' : 'Liberação programada: 12/11/2026 às 08:00. Faltam ' + fmtContagem(tempoAte(LIBERACOES.f1f2)) + '.';
+  var l3 = $('lock-3-data');
+  if (l3) l3.textContent = f3f4Liberada() ? '' : 'Liberação programada: 19/11/2026 às 08:00. Faltam ' + fmtContagem(tempoAte(LIBERACOES.f3f4)) + '.';
+
+  var ml = $('modo-livre');
+  if (ml) {
+    var permitido = docenteLiberado();
+    ml.disabled = !permitido;
+    var lab = ml.closest('.pn-toggle');
+    if (lab) lab.title = permitido ? '' : 'Modo docente disponível a partir de 19/11/2026. Professores podem usar ?prof=1 na URL.';
+  }
+
+  if (S.f2 && S.f2.eq && S.f2.eq.cloro && S.f2.eq.cloro.done) {
+    var a2 = $('advance-2');
+    if (a2) a2.hidden = !(f3f4Liberada() || modoLivreAtivo());
+  }
+
+  atualizarBotaoInicio();
+  atualizarTrilha();
+}
+
+/* ---------- Serialização do estado (Sets viram arrays) ---------- */
+function estadoAtualParaSalvar() {
+  var dados = JSON.parse(JSON.stringify({
+    v: 2,
+    score: S.score,
+    f1: S.f1, f2: S.f2, f3: S.f3, laudo: S.laudo
+  }, function (k, v) {
+    if (v instanceof Set) return { __set: Array.from(v) };
+    return v;
+  }));
+  dados.ui = {
+    f3just: ($('f3-just') || {}).value || '',
+    perito: ($('laudo-perito') || {}).value || '',
+    conduta: ($('laudo-conduta') || {}).value || '',
+    obs: ($('laudo-obsv') || {}).value || ''
+  };
+  return dados;
+}
+
+function salvarProgresso() {
+  if (!jogoIniciado) return;
+  try { localStorage.setItem(SALVAR_KEY, JSON.stringify(estadoAtualParaSalvar())); } catch (e) {}
+}
+
+function lerProgressoSalvo() {
+  try {
+    var raw = localStorage.getItem(SALVAR_KEY);
+    if (!raw) return null;
+    var d = JSON.parse(raw);
+    if (!d || d.v !== 2 || !d.f1 || !d.f2 || !d.f3) return null;
+    return d;
+  } catch (e) { return null; }
+}
+
+function apagarProgresso() {
+  try { localStorage.removeItem(SALVAR_KEY); } catch (e) {}
+}
+
+function conjuntoDe(v) { return new Set((v && v.__set) || []); }
+
+function aplicarSnapshot(d) {
+  S.score = d.score || 0;
+  S.f1 = d.f1; S.f2 = d.f2; S.f3 = d.f3;
+  S.laudo = d.laudo || { ok: false, scored: false };
+  S.f1.hipSel = conjuntoDe(S.f1.hipSel);
+  S.f3.epis = conjuntoDe(S.f3.epis);
+  S.f3.disp = conjuntoDe(S.f3.disp);
+  if (typeof S.f1.atual !== 'number') S.f1.atual = -1;
+  if (typeof S.f1.picked === 'undefined') S.f1.picked = null;
+  if (d.ui) {
+    if ($('f3-just')) $('f3-just').value = d.ui.f3just || '';
+    if ($('laudo-perito')) $('laudo-perito').value = d.ui.perito || '';
+    if ($('laudo-conduta')) $('laudo-conduta').value = d.ui.conduta || '';
+    if ($('laudo-obsv')) $('laudo-obsv').value = d.ui.obs || '';
+  }
+}
+
+function f1Completa() {
+  return PRODUTOS.every(function (_, i) { return evidenciaPronta(i); });
+}
+
+function f2Completa() {
+  return !!(S.f2.eq && S.f2.eq.neutra.done && S.f2.eq.cloro.done);
+}
+
+/* Reaplica toda a interface a partir do estado restaurado. */
+function sincronizarUI() {
+  popularFases();
+  $('score').textContent = String(S.score);
+
+  // Fase 01
+  $('f1-log-section').hidden = !(S.f1.f1done || f1Completa());
+  $('f1-hipotese').hidden = !S.f1.hipRevealed;
+  if (S.f1.hipRevealed) renderHip();
+  $('advance-1').hidden = !(S.f1.logOk && S.f1.logOk2);
+  if (S.f1.atual >= 0 && evidenciaAberta(S.f1.atual)) {
+    renderCarta(S.f1.atual);
+    $('p1-work').hidden = false;
+  }
+
+  // Fase 02 — subetapas
+  var combosFeitos = S.f2.combos.length > 0 && S.f2.combosFeitos >= S.f2.combos.length;
+  var qOk = !!(S.f2.r1 && S.f2.r2);
+  var neutraOk = !!(S.f2.eq.neutra && S.f2.eq.neutra.done);
+  var reconsOk = !!S.f2.recons;
+  $('f2a').hidden = combosFeitos;
+  $('f2b').hidden = !(combosFeitos && !qOk);
+  $('f2c').hidden = !(combosFeitos && qOk && !neutraOk);
+  $('f2montar').hidden = !(combosFeitos && qOk && neutraOk && !reconsOk);
+  $('f2d').hidden = !(combosFeitos && qOk && neutraOk && reconsOk);
+  $('p2a-next').hidden = !combosFeitos;
+  $('p2b-next').hidden = !qOk;
+  $('p2c-next').hidden = !neutraOk;
+  $('p2-recons-next').hidden = !reconsOk;
+  $('p2-alerta').hidden = !(combosFeitos && qOk && neutraOk);
+  $('advance-2').hidden = !(S.f2.eq.cloro.done && f3f4Liberada());
+
+  // Fase 03 — subetapas
+  $('p3a').hidden = !!S.f3.epiOk;
+  $('p3b').hidden = !(S.f3.epiOk && !S.f3.descOk);
+  $('p3c').hidden = !(S.f3.epiOk && S.f3.descOk);
+  $('p3-advance-epi').hidden = !S.f3.epiOk;
+  $('p3-advance-desc').hidden = !S.f3.descOk;
+  $('btn-finish').hidden = !(S.f3.ouro && S.f3.justOk);
+
+  // Quadro molecular + gás
+  renderMontagem();
+  renderGas();
+  if (S.f2.gas) {
+    var bs = $('p2-gas-opcoes').querySelectorAll('.quiz-opt');
+    bs.forEach(function (b, i) { b.classList.add(i === 0 ? 'certa' : 'bloqueada'); });
+  }
+
+  // Laudo já arquivado
+  if (S.laudo.ok) {
+    var be = $('btn-encerrar');
+    if (be) { be.textContent = 'CASO ARQUIVADO — LAUDO EMITIDO'; be.disabled = true; }
+    document.querySelectorAll('.laudo-form input, .laudo-form textarea').forEach(function (f) { f.disabled = true; });
+  }
+
+  // Reabre os encontros já concluídos (retomada do progresso).
+  if (f1Completa()) liberarEncontro(2);
+  if (f2Completa()) liberarEncontro(3);
+
+  atualizarPainel();
+  atualizarTrilha();
+}
+
+function faseDeRetorno() {
+  if (S.laudo.ok) return 'end';
+  if (f2Completa() && f3f4Liberada()) {
+    if (S.f3.ouro && S.f3.justOk) return 'end';
+    return 'phase-3';
+  }
+  if (f1Completa() && f1f2Liberada()) {
+    if (S.f1.logOk && S.f1.logOk2) return 'phase-2';
+    return 'phase-1';
+  }
+  return 'phase-1';
+}
+
+function passosDeRetorno() {
+  var feito = [f1Completa(), f2Completa(), !!S.f3.justOk, !!S.laudo.ok];
+  var concluida = 0;
+  while (concluida < 4 && feito[concluida]) concluida++;
+  return { concluida: concluida, atual: Math.min(concluida, 3) };
+}
+
+function continuarJogo() {
+  var d = lerProgressoSalvo();
+  if (!d) { começarJogo(); return; }
+  aplicarSnapshot(d);
+  jogoIniciado = true;
+  sincronizarUI();
+  var fase = faseDeRetorno();
+  if (fase === 'end') {
+    finalizar();
+    atualizarPassos(passosDeRetorno());
+  } else {
+    mostrarFase(fase);
+    atualizarPassos(passosDeRetorno());
+  }
+  window.scrollTo(0, 0);
 }
 
 /* ===================================================================
@@ -4253,10 +4549,20 @@ function atualizarTrilha() {
 function init() {
   renderEvidênciasMesa();
   atualizarTrilha();
-  $('btn-start').addEventListener('click', começarJogo);
+  $('btn-start').addEventListener('click', function () {
+    if (!f1f2Liberada()) return;
+    if (lerProgressoSalvo()) continuarJogo(); else começarJogo();
+  });
+  $('btn-recomecar').addEventListener('click', function () {
+    if (!window.confirm('Recomeçar do zero? Todo o progresso salvo neste navegador será apagado.')) return;
+    apagarProgresso();
+    jogoIniciado = false;
+    começarJogo();
+  });
 
   // Encontro 1 -> 2
   $('advance-1').addEventListener('click', function () {
+    if (!f1f2Liberada()) return;
     mostrarFase('phase-2');
     liberarEncontro(2);
     atualizarPassos({ concluida: 1, atual: 1 });
@@ -4310,6 +4616,11 @@ function init() {
 
   // Encontro 2 -> 3
   $('advance-2').addEventListener('click', function () {
+    if (!f3f4Liberada() && !modoLivreAtivo()) {
+      mostrarFb($('advance-2-fb'), 'info', 'FASE 03 BLOQUEADA',
+        'As Fases 03 e 04 serão liberadas em <strong>19/11/2026 às 08:00</strong> (horário de Brasília).');
+      return;
+    }
     mostrarFase('phase-3');
     liberarEncontro(3);
     atualizarPassos({ concluida: 2, atual: 2 });
@@ -4341,7 +4652,14 @@ function init() {
     $('p3b').hidden = true; $('p3c').hidden = false;
   });
 
-  $('btn-finish').addEventListener('click', finalizar);
+  $('btn-finish').addEventListener('click', function () {
+    if (!f3f4Liberada() && !modoLivreAtivo()) {
+      mostrarFb($('btn-finish-fb'), 'info', 'LAUDO BLOQUEADO',
+        'A Fase 04 (laudo final) será liberada em <strong>19/11/2026 às 08:00</strong> (horário de Brasília).');
+      return;
+    }
+    finalizar();
+  });
   $('p3-just-confirm').addEventListener('click', confirmarJustificativa);
   $('btn-encerrar').addEventListener('click', encerrarLaudo);
   $('btn-restart').addEventListener('click', começarJogo);
@@ -4368,6 +4686,12 @@ function init() {
   }
 
   $('modo-livre').addEventListener('change', function () {
+    if (this.checked && !docenteLiberado()) {
+      this.checked = false;
+      modoLivre = false;
+      aplicarModoLivre();
+      return;
+    }
     modoLivre = this.checked;
     aplicarModoLivre();
     renderEvidências();
@@ -4377,6 +4701,8 @@ function init() {
     b.addEventListener('click', function () {
       if (b.disabled) return;
       var alvo = b.getAttribute('data-fase');
+      var idxFase = ['phase-1', 'phase-2', 'phase-3', 'end'].indexOf(alvo);
+      if (idxFase >= 0 && !podeIniciarFase(idxFase)) return;
       if (alvo === 'end') { finalizar(); return; }
       popularFases();
       mostrarFase(alvo);
@@ -4414,6 +4740,14 @@ function init() {
   document.addEventListener('keydown', function (ev) {
     if (ev.key === 'Escape' && !$('modal-refs').hidden) $('modal-refs').hidden = true;
     if (ev.key === 'Escape' && !$('exame').hidden) $('exame').hidden = true;
+  });
+
+  atualizarLiberacao();
+  setInterval(atualizarLiberacao, 30000);
+  setInterval(salvarProgresso, 4000);
+  window.addEventListener('pagehide', salvarProgresso);
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') salvarProgresso();
   });
 }
 
