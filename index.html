@@ -241,6 +241,10 @@
     .pn-toggle input:checked + .pn-swich::after { background: var(--green); transform: translateX(16px); }
     .pn-toggle input:focus-visible + .pn-swich { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+    /* Modo docente fica oculto para os alunos: só aparece com a chave secreta na URL. */
+    .painel-nav .pn-toggle { display: none; }
+    body.modo-professor .painel-nav .pn-toggle { display: inline-flex; }
+
     .pn-botoes { display: flex; flex-wrap: wrap; gap: 6px; }
     .pn-botoes .btn { font-size: 0.72rem; padding: 7px 12px; }
     .pn-botoes .btn:disabled { opacity: .45; cursor: not-allowed; }
@@ -4296,10 +4300,15 @@ var LIBERACOES = {
 function f1f2Liberada() { return Date.now() >= LIBERACOES.f1f2; }
 function f3f4Liberada() { return Date.now() >= LIBERACOES.f3f4; }
 
-/* Modo docente: liberado após 19/11; antes disso, só com ?prof=1 na URL. */
+/* Modo docente: oculto para os alunos; acessível apenas com a chave secreta na URL. */
+var CHAVE_DOCENTE = 'perito104';
+
+function ehProfessor() {
+  return new RegExp('[?&#]chave=' + CHAVE_DOCENTE + '\\b').test(location.search + location.hash);
+}
+
 function docenteLiberado() {
-  if (f3f4Liberada()) return true;
-  return /[?&#]prof=1\b/.test(location.search + location.hash);
+  return ehProfessor();
 }
 
 function podeIniciarFase(k) {
@@ -4365,7 +4374,7 @@ function atualizarLiberacao() {
     var permitido = docenteLiberado();
     ml.disabled = !permitido;
     var lab = ml.closest('.pn-toggle');
-    if (lab) lab.title = permitido ? '' : 'Modo docente disponível a partir de 19/11/2026. Professores podem usar ?prof=1 na URL.';
+    if (lab) lab.title = '';
   }
 
   if (S.f2 && S.f2.eq && S.f2.eq.cloro && S.f2.eq.cloro.done) {
@@ -4547,6 +4556,7 @@ function continuarJogo() {
    =================================================================== */
 
 function init() {
+  if (ehProfessor()) document.body.classList.add('modo-professor');
   renderEvidênciasMesa();
   atualizarTrilha();
   $('btn-start').addEventListener('click', function () {
